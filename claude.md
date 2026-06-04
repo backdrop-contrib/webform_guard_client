@@ -133,10 +133,14 @@ COMPLETED WORK
 CURRENT STATE
 ==================================================
 
-Core functionality complete. Submission checking, spam token generation, email link, admin
-"Report as spam" button, and relay to server all working.
+Released: 1.x-0.1.0 on GitHub (2026-06-04).
+Submission checking, spam token generation, email link, admin "Report as spam" button,
+and relay to server all confirmed working on dev site.
 Settings config key: webform_guard_client.settings (server_url, api_key, site_identifier,
 fallback_on_error, enabled_webforms).
+Spam report route: spam-report/{token}.
+identifier_type stored and relayed to server on report.
+Note: check whether webform_guard_client_update_8010() was removed before the GitHub push.
 Spam report route: spam-report/{token}.
 identifier_type stored in webform_guard_spam_tokens and relayed to server on report.
 Temp update hook webform_guard_client_update_8010() in .install — remove before git push.
