@@ -1,0 +1,816 @@
+<?php
+
+/**
+ * @file
+ * Webform Guard Client module.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function webform_guard_client_menu() {
+  $items['admin/config/webform-guard-client'] = array(
+    'title' => 'Webform Guard Client',
+    'description' => 'Configure the Webform Guard Client module.',
+    'page callback' => 'webform_guard_client_overview_page',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['admin/config/webform-guard-client/settings'] = array(
+    'title' => 'Settings',
+    'description' => 'Configure Webform Guard Client settings.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webform_guard_client_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'webform_guard_client.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['spam/%'] = array(
+    'title' => 'Report spam',
+    'page callback' => 'webform_guard_client_spam_report_page',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Admin overview page callback.
+ */
+function webform_guard_client_overview_page() {
+  $output = '<h2>' . t('Webform Guard Client') . '</h2>';
+  $output .= '<p>' . t('Routes Backdrop Webform submissions through a remote guard service before the normal notification workflow continues.') . '</p>';
+  $output .= l(t('Configure settings'), 'admin/config/webform-guard-client/settings');
+  $output .= webform_guard_client_overview_table();
+  return $output;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function webform_guard_client_form_alter(&$form, &$form_state, $form_id) {
+  if (empty($form['#node']) || empty($form['#node']->type) || $form['#node']->type !== 'webform') {
+    return;
+  }
+
+  if (webform_guard_client_is_node_edit_form()) {
+    $nid = isset($form['#node']->nid) ? $form['#node']->nid : NULL;
+    $settings = webform_guard_client_get_webform_guard_settings($nid);
+    $options = webform_guard_client_get_webform_component_options($form['#node']);
+
+    $form['webform_guard'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Webform Guard settings'),
+      '#description' => t('Control whether this webform is checked by the Webform Guard client and which field should be used to identify repeat spam submissions.'),
+      '#weight' => 10,
+      '#tree' => TRUE,
+    );
+    $form['webform_guard']['enabled'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Enable Webform Guard for this form'),
+      '#default_value' => $settings['enabled'],
+    );
+    $form['webform_guard']['identifier_field'] = array(
+      '#type' => 'select',
+      '#title' => t('Sender email field'),
+      '#description' => t('We use the sender\'s email address to track repeat spam submissions. Please select the email field used for the person submitting this webform, for example your_email_address.'),
+      '#options' => $options,
+      '#default_value' => $settings['identifier_field'],
+      '#empty_option' => t('- Select a field -'),
+      '#empty_value' => '',
+      '#disabled' => count($options) === 0,
+      '#states' => array(
+        'required' => array(
+          ':input[name="webform_guard[enabled]"]' => array('checked' => TRUE),
+        ),
+      ),
+    );
+    $form['webform_guard']['show_block_message'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Show blocked submission message to users'),
+      '#description' => t('If enabled, users will see a friendly message when a submission is blocked by the guard service.'),
+      '#default_value' => isset($settings['show_block_message']) ? (bool) $settings['show_block_message'] : TRUE,
+    );
+
+    $form['webform_guard']['block_message'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Blocked submission message'),
+      '#description' => t('Message shown to users when a submission is blocked.'),
+      '#default_value' => !empty($settings['block_message']) ? $settings['block_message'] : t('Your message could not be sent at this time, please try again later.'),
+      '#size' => 80,
+    );
+    $form['#validate'][] = 'webform_guard_client_webform_node_form_validate';
+    $form['#submit'][] = 'webform_guard_client_webform_node_form_submit';
+    return;
+  }
+
+  if (empty($form['submitted']) || empty($form['#node']->webform)) {
+    return;
+  }
+
+  if (!webform_guard_client_is_webform_guard_enabled($form['#node']->nid)) {
+    return;
+  }
+
+  if (empty($form['#validate']) || !is_array($form['#validate'])) {
+    $form['#validate'] = array();
+  }
+  array_unshift($form['#validate'], 'webform_guard_client_check_submission_validate');
+}
+
+/**
+ * Return a central overview table of webforms and their guard status.
+ */
+function webform_guard_client_overview_table() {
+  $header = array(
+    t('Webform'),
+    t('Guard status'),
+    t('Identifier field'),
+    t('Actions'),
+  );
+
+  $rows = array();
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'title'))
+    ->condition('type', 'webform')
+    ->orderBy('title');
+  $result = $query->execute();
+  foreach ($result as $row) {
+    $settings = webform_guard_client_get_webform_guard_settings($row->nid);
+    $rows[] = array(
+      'data' => array(
+        check_plain($row->title),
+        $settings['enabled'] ? t('Enabled') : t('Disabled'),
+        !empty($settings['identifier_field']) ? check_plain($settings['identifier_field']) : t('None'),
+        l(t('Edit'), 'node/' . $row->nid . '/edit'),
+      ),
+    );
+  }
+
+  if (empty($rows)) {
+    return '<p>' . t('No webforms are available on this site yet.') . '</p>';
+  }
+
+  return theme('table', array('header' => $header, 'rows' => $rows));
+}
+
+/**
+ * Determine whether the current form is a webform node edit or creation page.
+ */
+function webform_guard_client_is_node_edit_form() {
+  return arg(0) === 'node' && (arg(1) === 'add' || arg(2) === 'edit');
+}
+
+/**
+ * Return settings for a webform node's guard configuration.
+ */
+function webform_guard_client_get_webform_guard_settings($nid) {
+  $config = config('webform_guard_client.settings');
+  $enabled_webforms = (array) $config->get('enabled_webforms');
+
+  if (empty($nid) || empty($enabled_webforms[$nid])) {
+    return array(
+      'enabled' => FALSE,
+      'identifier_field' => '',
+    );
+  }
+
+  $settings = $enabled_webforms[$nid];
+  if (!is_array($settings)) {
+    return array(
+      'enabled' => (bool) $settings,
+      'identifier_field' => '',
+    );
+  }
+
+  return array(
+    'enabled' => !empty($settings['enabled']),
+    'identifier_field' => !empty($settings['identifier_field']) ? $settings['identifier_field'] : '',
+    'show_block_message' => isset($settings['show_block_message']) ? (bool) $settings['show_block_message'] : TRUE,
+    'block_message' => !empty($settings['block_message']) ? $settings['block_message'] : '',
+  );
+}
+
+/**
+ * Return a list of selectable webform component fields.
+ */
+function webform_guard_client_get_webform_component_options($node) {
+  $options = array();
+  if (empty($node->webform['components']) || !is_array($node->webform['components'])) {
+    return $options;
+  }
+
+  foreach ($node->webform['components'] as $component) {
+    if (empty($component['form_key']) || empty($component['name'])) {
+      continue;
+    }
+    $options[$component['form_key']] = format_string('@name (@key)', array(
+      '@name' => $component['name'],
+      '@key' => $component['form_key'],
+    ));
+  }
+
+  return $options;
+}
+
+/**
+ * Determine if Webform Guard is enabled for a given webform node.
+ */
+function webform_guard_client_is_webform_guard_enabled($nid) {
+  $settings = webform_guard_client_get_webform_guard_settings($nid);
+  return $settings['enabled'];
+}
+
+/**
+ * Return the configured identifier field for a webform node.
+ */
+function webform_guard_client_get_webform_guard_identifier_field($nid) {
+  $settings = webform_guard_client_get_webform_guard_settings($nid);
+  return $settings['identifier_field'];
+}
+
+/**
+ * Save Webform Guard enabled state for a webform node.
+ */
+function webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identifier_field = '', $show_block_message = TRUE, $block_message = '') {
+  if (empty($nid)) {
+    return;
+  }
+
+  $config = config('webform_guard_client.settings');
+  $enabled_webforms = (array) $config->get('enabled_webforms');
+
+  if ($enabled) {
+    $enabled_webforms[$nid] = array(
+      'enabled' => TRUE,
+      'identifier_field' => trim($identifier_field),
+      'show_block_message' => (bool) $show_block_message,
+      'block_message' => trim($block_message),
+    );
+  }
+  else {
+    unset($enabled_webforms[$nid]);
+  }
+
+  $config->set('enabled_webforms', $enabled_webforms);
+  $config->save();
+}
+
+/**
+ * Validate handler for the webform node settings.
+ *
+ * Enforces that a sender email field is selected whenever Webform Guard is
+ * enabled, since the identifier field is required for spam detection.
+ */
+function webform_guard_client_webform_node_form_validate($form, &$form_state) {
+  if (!empty($form_state['values']['webform_guard']['enabled'])
+    && empty($form_state['values']['webform_guard']['identifier_field'])
+  ) {
+    form_set_error('webform_guard][identifier_field', t('Please select a sender email field. This is required when Webform Guard is enabled.'));
+  }
+}
+
+/**
+ * Submit handler for the webform node settings.
+ */
+function webform_guard_client_webform_node_form_submit($form, &$form_state) {
+  $nid = isset($form_state['nid']) ? $form_state['nid'] : (isset($form_state['values']['nid']) ? $form_state['values']['nid'] : NULL);
+  if (empty($nid)) {
+    return;
+  }
+
+  $enabled = !empty($form_state['values']['webform_guard']['enabled']);
+  $identifier_field = !empty($form_state['values']['webform_guard']['identifier_field']) ? $form_state['values']['webform_guard']['identifier_field'] : '';
+  $show_block_message = isset($form_state['values']['webform_guard']['show_block_message']) ? (bool) $form_state['values']['webform_guard']['show_block_message'] : TRUE;
+  $block_message = isset($form_state['values']['webform_guard']['block_message']) ? $form_state['values']['webform_guard']['block_message'] : '';
+  webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identifier_field, $show_block_message, $block_message);
+}
+
+/**
+ * Validate the webform submission with the guard service.
+ */
+function webform_guard_client_check_submission_validate($form, &$form_state) {
+  $config = config('webform_guard_client.settings');
+  $server_url = rtrim(trim($config->get('server_url')), '/');
+  $api_key = trim($config->get('api_key'));
+  $fallback = (bool) $config->get('fallback_on_error');
+
+  if (empty($server_url) || empty($api_key)) {
+    watchdog('webform_guard_client', 'Missing guard server URL or API key in configuration.', array(), WATCHDOG_WARNING);
+    return;
+  }
+
+  $node = $form['#node'];
+  $submitted = isset($form_state['values']['submitted']) ? $form_state['values']['submitted'] : array();
+  $payload = webform_guard_client_build_payload($node, $submitted, $config);
+
+  $options = array(
+    'method' => 'POST',
+    'data' => json_encode($payload),
+    'headers' => array(
+      'Content-Type' => 'application/json',
+      'Authorization' => 'Bearer ' . $api_key,
+    ),
+    'timeout' => 8,
+  );
+
+  $response = backdrop_http_request($server_url . '/api/v1/check-submission', $options);
+
+  if (!empty($response->error) || $response->code != 200) {
+    watchdog('webform_guard_client', 'Guard service request failed: @error', array('@error' => !empty($response->error) ? $response->error : 'HTTP ' . $response->code), WATCHDOG_WARNING);
+    if ($fallback) {
+      return;
+    }
+
+    form_set_error('', t('The submission could not be verified at this time. Please try again later.'));
+    return;
+  }
+
+  $data = json_decode(webform_guard_client_extract_json($response->data));
+  if (!is_object($data) || empty($data->status)) {
+    watchdog('webform_guard_client', 'Guard service returned an invalid response.', array(), WATCHDOG_WARNING);
+    if ($fallback) {
+      return;
+    }
+
+    form_set_error('', t('The submission could not be verified at this time. Please try again later.'));
+    return;
+  }
+
+  $status = $data->status;
+  $action = isset($data->action) ? $data->action : NULL;
+  $message = isset($data->message) ? $data->message : NULL;
+
+  if ($status === 'ok' || $action === 'deliver') {
+    return;
+  }
+
+  if ($status === 'subscription_expired') {
+    watchdog('webform_guard_client', 'Guard service subscription expired for node @nid — submission allowed through.', array('@nid' => $node->nid), WATCHDOG_WARNING);
+    return;
+  }
+
+  if ($status === 'spam' || $status === 'bounced' || $action === 'block') {
+    watchdog('webform_guard_client', 'Webform submission blocked by guard service for node @nid.', array('@nid' => $node->nid), WATCHDOG_NOTICE);
+    $settings = webform_guard_client_get_webform_guard_settings($node->nid);
+    if (!empty($settings['show_block_message'])) {
+      $message_text = !empty($settings['block_message']) ? $settings['block_message'] : t('Your message could not be sent at this time, please try again later.');
+      form_set_error('', $message_text);
+    }
+    return;
+  }
+
+  if ($status === 'error') {
+    watchdog('webform_guard_client', 'Guard service denied submission: @error', array('@error' => isset($data->error_code) ? $data->error_code : $message), WATCHDOG_WARNING);
+    form_set_error('', t('The submission was rejected by the guard service.'));
+    return;
+  }
+}
+
+/**
+ * Build the payload sent to the guard server.
+ */
+function webform_guard_client_build_payload($node, array $submitted, $config) {
+  $payload = array(
+    'submission_id' => webform_guard_client_generate_submission_id(),
+    'form_name' => isset($node->title) ? $node->title : 'webform_' . $node->nid,
+    'form_id' => 'node_' . $node->nid,
+    'submitted_at' => gmdate(DATE_ATOM),
+    'client_ip' => isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '',
+    'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '',
+    'fields' => $submitted,
+    'metadata' => array(
+      'site_url' => url('', array('absolute' => TRUE)),
+      'page_url' => request_uri(),
+      'node_id' => $node->nid,
+      'site_identifier' => $config->get('site_identifier'),
+    ),
+  );
+
+  $identifier_field = webform_guard_client_get_webform_guard_identifier_field($node->nid);
+  if (!empty($identifier_field) && isset($submitted[$identifier_field])) {
+    $payload['spam_identifier'] = array(
+      'field' => $identifier_field,
+      'value' => $submitted[$identifier_field],
+    );
+  }
+
+  return $payload;
+}
+
+/**
+ * Extract a JSON object string from a raw HTTP response body.
+ *
+ * backdrop_http_request() does not decode chunked transfer encoding, so the
+ * raw body may contain chunk size markers (e.g. "E6 {...} 0"). This function
+ * extracts just the JSON object between the outermost braces.
+ *
+ * @param string $body
+ *   The raw response body.
+ *
+ * @return string
+ *   The extracted JSON string, or the original body if no object is found.
+ */
+function webform_guard_client_extract_json($body) {
+  $start = strpos($body, '{');
+  $end = strrpos($body, '}');
+  if ($start !== FALSE && $end !== FALSE && $end > $start) {
+    return substr($body, $start, $end - $start + 1);
+  }
+  return $body;
+}
+
+/**
+ * Generate a request submission identifier.
+ */
+function webform_guard_client_generate_submission_id() {
+  return 'wgc_' . md5(uniqid(mt_rand(), TRUE));
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * Appends a This is spam link to outgoing webform notification emails when
+ * a valid spam-report token exists for that submission.
+ */
+function webform_guard_client_mail_alter(&$message) {
+  if (empty($message['params']['submission']) || empty($message['params']['node'])) {
+    return;
+  }
+
+  $node = $message['params']['node'];
+  $submission = $message['params']['submission'];
+
+  if (empty($node->type) || $node->type !== 'webform') {
+    return;
+  }
+
+  if (!webform_guard_client_is_webform_guard_enabled($node->nid)) {
+    return;
+  }
+
+  $token_row = webform_guard_client_load_spam_token($submission->sid);
+  if (!$token_row) {
+    return;
+  }
+
+  $report_url = url('spam/' . $token_row->token, array('absolute' => TRUE));
+  $spam_line = "\n\n-- \n" . t('Report as spam:') . ' ' . $report_url;
+
+  if (is_array($message['body'])) {
+    $message['body'][] = $spam_line;
+  }
+  else {
+    $message['body'] .= $spam_line;
+  }
+}
+
+/**
+ * Implements hook_webform_submission_actions().
+ *
+ * Shows a Report as spam button for active tokens, and a disabled Reported as
+ * spam button after the submission has already been flagged.
+ */
+function webform_guard_client_webform_submission_actions($node, $submission) {
+  if (!webform_guard_client_is_webform_guard_enabled($node->nid)) {
+    return array();
+  }
+
+  $token_row = db_select('webform_guard_spam_tokens', 't')
+    ->fields('t')
+    ->condition('sid', $submission->sid)
+    ->execute()
+    ->fetchObject();
+
+  if (!$token_row) {
+    return array();
+  }
+
+  backdrop_add_css(backdrop_get_path('module', 'webform_guard_client') . '/css/webform_guard_client.css');
+
+  if ($token_row->used) {
+    return array(
+      'webform_guard_report_spam' => array(
+        'title' => t('Reported as spam'),
+        'href' => '#',
+        'attributes' => array(
+          'class' => array('button', 'button-secondary', 'webform-guard-reported'),
+          'aria-disabled' => 'true',
+          'title' => t('This submission has already been reported as spam.'),
+        ),
+      ),
+    );
+  }
+
+  if ($token_row->expires < REQUEST_TIME) {
+    return array();
+  }
+
+  backdrop_add_library('system', 'backdrop.ajax');
+  backdrop_add_library('system', 'backdrop.dialog');
+
+  return array(
+    'webform_guard_report_spam' => array(
+      'title' => t('Report as spam'),
+      'href' => 'spam/' . $token_row->token,
+      'attributes' => array(
+        'class' => array('use-ajax', 'button', 'button-secondary', 'webform-guard-report-spam'),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_webform_submission_insert().
+ *
+ * Generates a signed spam-report token after a submission is saved so the
+ * token is ready for the submission preview and notification email.
+ */
+function webform_guard_client_webform_submission_insert($node, $submission) {
+  if (!webform_guard_client_is_webform_guard_enabled($node->nid)) {
+    return;
+  }
+
+  $identifier_field = webform_guard_client_get_webform_guard_identifier_field($node->nid);
+  if (empty($identifier_field)) {
+    return;
+  }
+
+  $submitted = isset($submission->data) ? $submission->data : array();
+  $identifier_value = webform_guard_client_extract_identifier_value($node, $submitted, $identifier_field);
+  if (empty($identifier_value)) {
+    return;
+  }
+
+  webform_guard_client_create_spam_token($submission->sid, $node->nid, $identifier_field, $identifier_value);
+}
+
+/**
+ * Extract a flat identifier value from webform submission data by form key.
+ *
+ * Webform stores submission data keyed by component ID (cid), not form key.
+ * This function resolves the form key to a cid using the node's component
+ * list, then retrieves the submitted value.
+ *
+ * @param object $node
+ *   The webform node.
+ * @param array $data
+ *   The submission data array keyed by cid.
+ * @param string $form_key
+ *   The form key of the identifier field, e.g. your_email.
+ *
+ * @return string
+ *   The identifier value, or an empty string if not found.
+ */
+function webform_guard_client_extract_identifier_value($node, array $data, $form_key) {
+  if (empty($node->webform['components']) || !is_array($node->webform['components'])) {
+    return '';
+  }
+
+  foreach ($node->webform['components'] as $cid => $component) {
+    if (!empty($component['form_key']) && $component['form_key'] === $form_key) {
+      if (isset($data[$cid]) && is_array($data[$cid]) && isset($data[$cid][0])) {
+        return trim((string) $data[$cid][0]);
+      }
+      return '';
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Create and store a spam-report token for a submission.
+ *
+ * The token is a cryptographically random string stored in the local DB.
+ * No API credentials are required at generation time — the API key is only
+ * used later when the relay request is sent to the guard server.
+ *
+ * @param int $sid
+ *   Webform submission ID.
+ * @param int $nid
+ *   Webform node ID.
+ * @param string $identifier_field
+ *   Form key of the spam identifier field.
+ * @param string $identifier_value
+ *   The submitted value for that field.
+ *
+ * @return string
+ *   The generated token string.
+ */
+function webform_guard_client_create_spam_token($sid, $nid, $identifier_field, $identifier_value) {
+  $token = bin2hex(random_bytes(32));
+  $expires = REQUEST_TIME + (30 * 24 * 60 * 60);
+
+  db_merge('webform_guard_spam_tokens')
+    ->key(array('sid' => $sid))
+    ->fields(array(
+      'token' => $token,
+      'sid' => $sid,
+      'nid' => $nid,
+      'identifier_field' => $identifier_field,
+      'identifier_value' => $identifier_value,
+      'used' => 0,
+      'expires' => $expires,
+      'created' => REQUEST_TIME,
+    ))
+    ->execute();
+
+  return $token;
+}
+
+/**
+ * Load the spam-report token for a given submission ID.
+ *
+ * @param int $sid
+ *   Webform submission ID.
+ *
+ * @return object|false
+ *   The token row, or FALSE if not found or already used/expired.
+ */
+function webform_guard_client_load_spam_token($sid) {
+  return db_select('webform_guard_spam_tokens', 't')
+    ->fields('t')
+    ->condition('sid', $sid)
+    ->condition('used', 0)
+    ->condition('expires', REQUEST_TIME, '>')
+    ->execute()
+    ->fetchObject();
+}
+
+/**
+ * Mark a spam token as used so it cannot be replayed.
+ *
+ * @param int $sid
+ *   Webform submission ID.
+ */
+function webform_guard_client_consume_spam_token($sid) {
+  db_update('webform_guard_spam_tokens')
+    ->fields(array('used' => 1))
+    ->condition('sid', $sid)
+    ->execute();
+}
+
+/**
+ * Public page: validate a spam-report token, relay it, and display the result.
+ *
+ * This URL is embedded in both the submission preview (as an AJAX button) and
+ * notification emails (as a plain link). When triggered via AJAX it opens a
+ * dialog; otherwise it redirects to the submission page with a status message.
+ *
+ * @param string $token
+ *   The token string from the URL.
+ *
+ * @return string|array
+ *   Rendered HTML or AJAX command array.
+ */
+function webform_guard_client_spam_report_page($token) {
+  $is_ajax = backdrop_is_ajax();
+
+  $token_row = db_select('webform_guard_spam_tokens', 't')
+    ->fields('t')
+    ->condition('token', $token)
+    ->execute()
+    ->fetchObject();
+
+  if (!$token_row) {
+    return webform_guard_client_spam_report_respond(
+      $is_ajax, NULL,
+      t('This link is invalid or has expired.'), 'error'
+    );
+  }
+
+  if ($token_row->used) {
+    return webform_guard_client_spam_report_respond(
+      $is_ajax, $token_row,
+      t('This submission has already been reported as spam.'), 'warning'
+    );
+  }
+
+  if ($token_row->expires < REQUEST_TIME) {
+    return webform_guard_client_spam_report_respond(
+      $is_ajax, $token_row,
+      t('This link has expired.'), 'error'
+    );
+  }
+
+  $result = webform_guard_client_relay_spam_report($token_row);
+
+  if ($result === 'accepted') {
+    webform_guard_client_consume_spam_token($token_row->sid);
+    return webform_guard_client_spam_report_respond(
+      $is_ajax, $token_row,
+      t('Thank you. This submission has been reported as spam.'), 'status'
+    );
+  }
+
+  if ($result === 'subscription_expired') {
+    return webform_guard_client_spam_report_respond(
+      $is_ajax, $token_row,
+      t('Your Webform Guard subscription has expired. Please renew to continue reporting spam.'), 'warning'
+    );
+  }
+
+  return webform_guard_client_spam_report_respond(
+    $is_ajax, $token_row,
+    t('The spam report could not be sent at this time. Please try again later.'), 'error'
+  );
+}
+
+/**
+ * Deliver the spam report result as an AJAX dialog or a page redirect.
+ *
+ * @param bool $is_ajax
+ *   Whether the request was made via Backdrop AJAX.
+ * @param object|null $token_row
+ *   The token row, used to build the submission redirect URL.
+ * @param string $message
+ *   The human-readable result message.
+ * @param string $type
+ *   Message type: status, warning, or error.
+ *
+ * @return string|array
+ *   AJAX command array for AJAX requests, or rendered HTML for plain requests.
+ */
+function webform_guard_client_spam_report_respond($is_ajax, $token_row, $message, $type) {
+  $submission_url = ($token_row && !empty($token_row->nid) && !empty($token_row->sid))
+    ? 'node/' . $token_row->nid . '/submission/' . $token_row->sid
+    : '<front>';
+
+  if ($is_ajax) {
+    $icon = $type === 'status' ? '&#10003;' : ($type === 'warning' ? '&#9888;' : '&#10007;');
+    $content = '<p class="messages messages--' . check_plain($type) . '">'
+      . $icon . ' ' . check_plain($message)
+      . '</p>'
+      . '<p>' . l(t('Done'), $submission_url, array('attributes' => array('class' => array('button', 'button-primary')))) . '</p>';
+
+    $commands = array();
+    $commands[] = ajax_command_open_dialog(
+      '#backdrop-modal',
+      t('Report as spam'),
+      $content,
+      array('width' => 420)
+    );
+    return array('#type' => 'ajax', '#commands' => $commands);
+  }
+
+  backdrop_set_message($message, $type);
+  backdrop_goto($submission_url);
+}
+
+/**
+ * Send a spam report to the guard server for a given token row.
+ *
+ * @param object $token_row
+ *   A row from webform_guard_spam_tokens.
+ *
+ * @return string
+ *   One of: accepted, subscription_expired, error.
+ */
+function webform_guard_client_relay_spam_report($token_row) {
+  $config = config('webform_guard_client.settings');
+  $server_url = rtrim(trim($config->get('server_url')), '/');
+  $api_key = trim($config->get('api_key'));
+  $site_identifier = trim($config->get('site_identifier'));
+
+  if (empty($server_url) || empty($api_key)) {
+    watchdog('webform_guard_client', 'Cannot relay spam report: guard server URL or API key not configured.', array(), WATCHDOG_ERROR);
+    return 'error';
+  }
+
+  $payload = array(
+    'site_identifier' => $site_identifier,
+    'spam_identifier' => array(
+      'field' => $token_row->identifier_field,
+      'value' => $token_row->identifier_value,
+    ),
+  );
+
+  $options = array(
+    'method' => 'POST',
+    'data' => json_encode($payload),
+    'headers' => array(
+      'Content-Type' => 'application/json',
+      'Authorization' => 'Bearer ' . $api_key,
+    ),
+    'timeout' => 8,
+  );
+
+  $response = backdrop_http_request($server_url . '/api/v1/report-spam', $options);
+
+  if (!empty($response->error) || !in_array($response->code, array(200, 202))) {
+    watchdog('webform_guard_client', 'Spam relay failed: @error', array('@error' => !empty($response->error) ? $response->error : 'HTTP ' . $response->code), WATCHDOG_WARNING);
+    return 'error';
+  }
+
+  $data = json_decode(webform_guard_client_extract_json($response->data));
+  if (is_object($data) && !empty($data->subscription->status) && $data->subscription->status === 'expired') {
+    return 'subscription_expired';
+  }
+
+  return 'accepted';
+}

@@ -1,0 +1,10 @@
+{
+  "server_url": "",
+  "api_key": "",
+  "site_identifier": "",
+  "fallback_on_error": false,
+  "enabled_webforms": {},
+  "last_test_time": null,
+  "last_test_status": "",
+  "last_test_version": ""
+}

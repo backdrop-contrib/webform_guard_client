@@ -1,0 +1,111 @@
+<?php
+
+/**
+ * @file
+ * Install and schema callbacks for Webform Guard Client.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function webform_guard_client_schema() {
+  $schema['webform_guard_spam_tokens'] = array(
+    'description' => 'Single-use signed tokens for the This is spam report links.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'token' => array(
+        'description' => 'The unique token string embedded in the report link.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'sid' => array(
+        'description' => 'The webform submission ID this token relates to.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'nid' => array(
+        'description' => 'The webform node ID.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'identifier_field' => array(
+        'description' => 'The form field key used as the spam identifier.',
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'identifier_value' => array(
+        'description' => 'The normalised identifier value, e.g. the submitter email address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'used' => array(
+        'description' => 'Whether this token has already been consumed.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'expires' => array(
+        'description' => 'Unix timestamp after which this token is no longer valid.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'token' => array('token'),
+    ),
+    'indexes' => array(
+      'sid' => array('sid'),
+      'expires' => array('expires'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function webform_guard_client_install() {
+  $schema = webform_guard_client_schema();
+  if (!db_table_exists('webform_guard_spam_tokens')) {
+    db_create_table('webform_guard_spam_tokens', $schema['webform_guard_spam_tokens']);
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function webform_guard_client_uninstall() {
+  db_drop_table('webform_guard_spam_tokens');
+}
+
+/**
+ * Create the spam tokens table for existing installations.
+ */
+function webform_guard_client_update_8001() {
+  $schema = webform_guard_client_schema();
+  if (!db_table_exists('webform_guard_spam_tokens')) {
+    db_create_table('webform_guard_spam_tokens', $schema['webform_guard_spam_tokens']);
+  }
+
+  return t('Create the Webform Guard spam tokens table.');
+}
