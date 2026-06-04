@@ -6,6 +6,18 @@
  */
 
 /**
+ * Implements hook_config_info().
+ */
+function webform_guard_client_config_info() {
+  $config['webform_guard_client.settings'] = array(
+    'label' => 'Webform Guard Client settings',
+    'group' => 'system',
+  );
+
+  return $config;
+}
+
+/**
  * Implements hook_menu().
  */
 function webform_guard_client_menu() {
@@ -14,6 +26,7 @@ function webform_guard_client_menu() {
     'description' => 'Configure the Webform Guard Client module.',
     'page callback' => 'webform_guard_client_overview_page',
     'access arguments' => array('administer site configuration'),
+    'file' => 'webform_guard_client.admin.inc',
     'type' => MENU_NORMAL_ITEM,
   );
 
@@ -27,7 +40,7 @@ function webform_guard_client_menu() {
     'type' => MENU_LOCAL_TASK,
   );
 
-  $items['spam/%'] = array(
+  $items['spam-report/%'] = array(
     'title' => 'Report spam',
     'page callback' => 'webform_guard_client_spam_report_page',
     'page arguments' => array(1),
@@ -39,24 +52,12 @@ function webform_guard_client_menu() {
 }
 
 /**
- * Admin overview page callback.
- *
- * @return string
- *   Rendered HTML markup for the overview page.
- */
-function webform_guard_client_overview_page() {
-  $output = '<h2>' . t('Webform Guard Client') . '</h2>';
-  $output .= '<p>' . t('Routes Backdrop Webform submissions through a remote guard service before the normal notification workflow continues.') . '</p>';
-  $output .= l(t('Configure settings'), 'admin/config/webform-guard-client/settings');
-  $output .= webform_guard_client_overview_table();
-  return $output;
-}
-
-/**
  * Implements hook_form_alter().
  */
 function webform_guard_client_form_alter(&$form, &$form_state, $form_id) {
-  if (empty($form['#node']) || empty($form['#node']->type) || $form['#node']->type !== 'webform') {
+  if (empty($form['#node'])
+    || empty($form['#node']->type)
+    || $form['#node']->type !== 'webform') {
     return;
   }
 
@@ -96,14 +97,17 @@ function webform_guard_client_form_alter(&$form, &$form_state, $form_id) {
       '#type' => 'checkbox',
       '#title' => t('Show blocked submission message to users'),
       '#description' => t('If enabled, users will see a friendly message when a submission is blocked by the guard service.'),
-      '#default_value' => isset($settings['show_block_message']) ? (bool) $settings['show_block_message'] : TRUE,
+      '#default_value' => isset($settings['show_block_message'])
+        ? (bool) $settings['show_block_message']
+        : TRUE,
     );
-
     $form['webform_guard']['block_message'] = array(
       '#type' => 'textfield',
       '#title' => t('Blocked submission message'),
       '#description' => t('Message shown to users when a submission is blocked.'),
-      '#default_value' => !empty($settings['block_message']) ? $settings['block_message'] : t('Your message could not be sent at this time, please try again later.'),
+      '#default_value' => !empty($settings['block_message'])
+        ? $settings['block_message']
+        : t('Your message could not be sent at this time, please try again later.'),
       '#size' => 80,
     );
     $form['#validate'][] = 'webform_guard_client_webform_node_form_validate';
@@ -123,45 +127,6 @@ function webform_guard_client_form_alter(&$form, &$form_state, $form_id) {
     $form['#validate'] = array();
   }
   array_unshift($form['#validate'], 'webform_guard_client_check_submission_validate');
-}
-
-/**
- * Return a central overview table of webforms and their guard status.
- *
- * @return string
- *   Rendered HTML table, or a paragraph if no webforms exist.
- */
-function webform_guard_client_overview_table() {
-  $header = array(
-    t('Webform'),
-    t('Guard status'),
-    t('Identifier field'),
-    t('Actions'),
-  );
-
-  $rows = array();
-  $query = db_select('node', 'n')
-    ->fields('n', array('nid', 'title'))
-    ->condition('type', 'webform')
-    ->orderBy('title');
-  $result = $query->execute();
-  foreach ($result as $row) {
-    $settings = webform_guard_client_get_webform_guard_settings($row->nid);
-    $rows[] = array(
-      'data' => array(
-        check_plain($row->title),
-        $settings['enabled'] ? t('Enabled') : t('Disabled'),
-        !empty($settings['identifier_field']) ? check_plain($settings['identifier_field']) : t('None'),
-        l(t('Edit'), 'node/' . $row->nid . '/edit'),
-      ),
-    );
-  }
-
-  if (empty($rows)) {
-    return '<p>' . t('No webforms are available on this site yet.') . '</p>';
-  }
-
-  return theme('table', array('header' => $header, 'rows' => $rows));
 }
 
 /**
@@ -204,9 +169,15 @@ function webform_guard_client_get_webform_guard_settings($nid) {
 
   return array(
     'enabled' => !empty($settings['enabled']),
-    'identifier_field' => !empty($settings['identifier_field']) ? $settings['identifier_field'] : '',
-    'show_block_message' => isset($settings['show_block_message']) ? (bool) $settings['show_block_message'] : TRUE,
-    'block_message' => !empty($settings['block_message']) ? $settings['block_message'] : '',
+    'identifier_field' => !empty($settings['identifier_field'])
+      ? $settings['identifier_field']
+      : '',
+    'show_block_message' => isset($settings['show_block_message'])
+      ? (bool) $settings['show_block_message']
+      : TRUE,
+    'block_message' => !empty($settings['block_message'])
+      ? $settings['block_message']
+      : '',
   );
 }
 
@@ -280,7 +251,13 @@ function webform_guard_client_get_webform_guard_identifier_field($nid) {
  * @param string $block_message
  *   The message text to show when a submission is blocked.
  */
-function webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identifier_field = '', $show_block_message = TRUE, $block_message = '') {
+function webform_guard_client_set_webform_guard_enabled(
+  $nid,
+  $enabled,
+  $identifier_field = '',
+  $show_block_message = TRUE,
+  $block_message = '') {
+
   if (empty($nid)) {
     return;
   }
@@ -319,7 +296,10 @@ function webform_guard_client_webform_node_form_validate($form, &$form_state) {
   if (!empty($form_state['values']['webform_guard']['enabled'])
     && empty($form_state['values']['webform_guard']['identifier_field'])
   ) {
-    form_set_error('webform_guard][identifier_field', t('Please select a sender email field. This is required when Webform Guard is enabled.'));
+    form_set_error(
+      'webform_guard][identifier_field',
+      t('Please select a sender email field. This is required when Webform Guard is enabled.')
+    );
   }
 }
 
@@ -332,16 +312,35 @@ function webform_guard_client_webform_node_form_validate($form, &$form_state) {
  *   The form state array.
  */
 function webform_guard_client_webform_node_form_submit($form, &$form_state) {
-  $nid = isset($form_state['nid']) ? $form_state['nid'] : (isset($form_state['values']['nid']) ? $form_state['values']['nid'] : NULL);
+  if (isset($form_state['nid'])) {
+    $nid = $form_state['nid'];
+  }
+  elseif (isset($form_state['values']['nid'])) {
+    $nid = $form_state['values']['nid'];
+  }
+  else {
+    $nid = NULL;
+  }
+
   if (empty($nid)) {
     return;
   }
 
-  $enabled = !empty($form_state['values']['webform_guard']['enabled']);
-  $identifier_field = !empty($form_state['values']['webform_guard']['identifier_field']) ? $form_state['values']['webform_guard']['identifier_field'] : '';
-  $show_block_message = isset($form_state['values']['webform_guard']['show_block_message']) ? (bool) $form_state['values']['webform_guard']['show_block_message'] : TRUE;
-  $block_message = isset($form_state['values']['webform_guard']['block_message']) ? $form_state['values']['webform_guard']['block_message'] : '';
-  webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identifier_field, $show_block_message, $block_message);
+  $values = $form_state['values']['webform_guard'];
+  $enabled = !empty($values['enabled']);
+  $identifier_field = !empty($values['identifier_field']) ? $values['identifier_field'] : '';
+  $show_block_message = isset($values['show_block_message'])
+    ? (bool) $values['show_block_message']
+    : TRUE;
+  $block_message = isset($values['block_message']) ? $values['block_message'] : '';
+
+  webform_guard_client_set_webform_guard_enabled(
+    $nid,
+    $enabled,
+    $identifier_field,
+    $show_block_message,
+    $block_message
+  );
 }
 
 /**
@@ -359,12 +358,18 @@ function webform_guard_client_check_submission_validate($form, &$form_state) {
   $fallback = (bool) $config->get('fallback_on_error');
 
   if (empty($server_url) || empty($api_key)) {
-    watchdog('webform_guard_client', 'Missing guard server URL or API key in configuration.', array(), WATCHDOG_WARNING);
+    watchdog('webform_guard_client',
+      'Missing guard server URL or API key in configuration.',
+      array(),
+      WATCHDOG_WARNING
+    );
     return;
   }
 
   $node = $form['#node'];
-  $submitted = isset($form_state['values']['submitted']) ? $form_state['values']['submitted'] : array();
+  $submitted = isset($form_state['values']['submitted'])
+    ? $form_state['values']['submitted']
+    : array();
   $payload = webform_guard_client_build_payload($node, $submitted, $config);
 
   $options = array(
@@ -377,25 +382,30 @@ function webform_guard_client_check_submission_validate($form, &$form_state) {
     'timeout' => 8,
   );
 
-  $response = backdrop_http_request($server_url . '/api/v1/check-submission', $options);
+  $endpoint = $server_url . '/api/v1/webform-guard/check-submission';
+  $response = backdrop_http_request($endpoint, $options);
 
   if (!empty($response->error) || $response->code != 200) {
-    watchdog('webform_guard_client', 'Guard service request failed: @error', array('@error' => !empty($response->error) ? $response->error : 'HTTP ' . $response->code), WATCHDOG_WARNING);
+    $error = !empty($response->error) ? $response->error : 'HTTP ' . $response->code;
+    watchdog('webform_guard_client', 'Guard service request failed: @error',
+      array('@error' => $error), WATCHDOG_WARNING);
     if ($fallback) {
       return;
     }
-
     form_set_error('', t('The submission could not be verified at this time. Please try again later.'));
     return;
   }
 
   $data = json_decode(webform_guard_client_extract_json($response->data));
   if (!is_object($data) || empty($data->status)) {
-    watchdog('webform_guard_client', 'Guard service returned an invalid response.', array(), WATCHDOG_WARNING);
+    watchdog('webform_guard_client',
+      'Guard service returned an invalid response.',
+      array(),
+      WATCHDOG_WARNING
+    );
     if ($fallback) {
       return;
     }
-
     form_set_error('', t('The submission could not be verified at this time. Please try again later.'));
     return;
   }
@@ -409,22 +419,34 @@ function webform_guard_client_check_submission_validate($form, &$form_state) {
   }
 
   if ($status === 'subscription_expired') {
-    watchdog('webform_guard_client', 'Guard service subscription expired for node @nid — submission allowed through.', array('@nid' => $node->nid), WATCHDOG_WARNING);
+    watchdog('webform_guard_client',
+      'Guard service subscription expired for node @nid — submission allowed through.',
+      array('@nid' => $node->nid),
+      WATCHDOG_WARNING
+    );
     return;
   }
 
   if ($status === 'spam' || $status === 'bounced' || $action === 'block') {
-    watchdog('webform_guard_client', 'Webform submission blocked by guard service for node @nid.', array('@nid' => $node->nid), WATCHDOG_NOTICE);
+    watchdog('webform_guard_client',
+      'Webform submission blocked by guard service for node @nid.',
+      array('@nid' => $node->nid),
+      WATCHDOG_NOTICE
+    );
     $settings = webform_guard_client_get_webform_guard_settings($node->nid);
     if (!empty($settings['show_block_message'])) {
-      $message_text = !empty($settings['block_message']) ? $settings['block_message'] : t('Your message could not be sent at this time, please try again later.');
+      $message_text = !empty($settings['block_message'])
+        ? $settings['block_message']
+        : t('Your message could not be sent at this time, please try again later.');
       form_set_error('', $message_text);
     }
     return;
   }
 
   if ($status === 'error') {
-    watchdog('webform_guard_client', 'Guard service denied submission: @error', array('@error' => isset($data->error_code) ? $data->error_code : $message), WATCHDOG_WARNING);
+    $error_code = isset($data->error_code) ? $data->error_code : $message;
+    watchdog('webform_guard_client', 'Guard service denied submission: @error',
+      array('@error' => $error_code), WATCHDOG_WARNING);
     form_set_error('', t('The submission was rejected by the guard service.'));
     return;
   }
@@ -464,11 +486,37 @@ function webform_guard_client_build_payload($node, array $submitted, $config) {
   if (!empty($identifier_field) && isset($submitted[$identifier_field])) {
     $payload['spam_identifier'] = array(
       'field' => $identifier_field,
+      'type' => webform_guard_client_get_component_type($node, $identifier_field),
       'value' => $submitted[$identifier_field],
     );
   }
 
   return $payload;
+}
+
+/**
+ * Return the Webform component type for a given form key.
+ *
+ * @param object $node
+ *   The webform node object.
+ * @param string $form_key
+ *   The form key of the component to look up.
+ *
+ * @return string
+ *   The component type (e.g. email, tel, url, textfield), or empty string if not found.
+ */
+function webform_guard_client_get_component_type($node, $form_key) {
+  if (empty($node->webform['components']) || !is_array($node->webform['components'])) {
+    return '';
+  }
+
+  foreach ($node->webform['components'] as $component) {
+    if (!empty($component['form_key']) && $component['form_key'] === $form_key) {
+      return !empty($component['type']) ? $component['type'] : '';
+    }
+  }
+
+  return '';
 }
 
 /**
@@ -533,7 +581,7 @@ function webform_guard_client_mail_alter(&$message) {
     return;
   }
 
-  $report_url = url('spam/' . $token_row->token, array('absolute' => TRUE));
+  $report_url = url('spam-report/' . $token_row->token, array('absolute' => TRUE));
   $spam_line = "\n\n-- \n" . t('Report as spam:') . ' ' . $report_url;
 
   if (is_array($message['body'])) {
@@ -574,7 +622,8 @@ function webform_guard_client_webform_submission_actions($node, $submission) {
     return array();
   }
 
-  backdrop_add_css(backdrop_get_path('module', 'webform_guard_client') . '/css/webform_guard_client.css');
+  $css_path = backdrop_get_path('module', 'webform_guard_client');
+  backdrop_add_css($css_path . '/css/webform_guard_client.css');
 
   if ($token_row->used) {
     return array(
@@ -600,7 +649,7 @@ function webform_guard_client_webform_submission_actions($node, $submission) {
   return array(
     'webform_guard_report_spam' => array(
       'title' => t('Report as spam'),
-      'href' => 'spam/' . $token_row->token,
+      'href' => 'spam-report/' . $token_row->token,
       'attributes' => array(
         'class' => array('use-ajax', 'button', 'button-secondary', 'webform-guard-report-spam'),
       ),
@@ -630,12 +679,23 @@ function webform_guard_client_webform_submission_insert($node, $submission) {
   }
 
   $submitted = isset($submission->data) ? $submission->data : array();
-  $identifier_value = webform_guard_client_extract_identifier_value($node, $submitted, $identifier_field);
+  $identifier_value = webform_guard_client_extract_identifier_value(
+    $node,
+    $submitted,
+    $identifier_field
+  );
   if (empty($identifier_value)) {
     return;
   }
 
-  webform_guard_client_create_spam_token($submission->sid, $node->nid, $identifier_field, $identifier_value);
+  $identifier_type = webform_guard_client_get_component_type($node, $identifier_field);
+  webform_guard_client_create_spam_token(
+    $submission->sid,
+    $node->nid,
+    $identifier_field,
+    $identifier_value,
+    $identifier_type
+  );
 }
 
 /**
@@ -687,11 +747,19 @@ function webform_guard_client_extract_identifier_value($node, array $data, $form
  *   Form key of the spam identifier field.
  * @param string $identifier_value
  *   The submitted value for that field.
+ * @param string $identifier_type
+ *   The Webform component type (e.g. email, tel, url, textfield).
  *
  * @return string
  *   The generated token string.
  */
-function webform_guard_client_create_spam_token($sid, $nid, $identifier_field, $identifier_value) {
+function webform_guard_client_create_spam_token(
+  $sid,
+  $nid,
+  $identifier_field,
+  $identifier_value,
+  $identifier_type = '') {
+
   $token = bin2hex(random_bytes(32));
   $expires = REQUEST_TIME + (30 * 24 * 60 * 60);
 
@@ -702,6 +770,7 @@ function webform_guard_client_create_spam_token($sid, $nid, $identifier_field, $
       'sid' => $sid,
       'nid' => $nid,
       'identifier_field' => $identifier_field,
+      'identifier_type' => $identifier_type,
       'identifier_value' => $identifier_value,
       'used' => 0,
       'expires' => $expires,
@@ -800,7 +869,8 @@ function webform_guard_client_spam_report_page($token) {
   if ($result === 'subscription_expired') {
     return webform_guard_client_spam_report_respond(
       $is_ajax, $token_row,
-      t('Your Webform Guard subscription has expired. Please renew to continue reporting spam.'), 'warning'
+      t('Your Webform Guard subscription has expired. Please renew to continue reporting spam.'),
+      'warning'
     );
   }
 
@@ -831,11 +901,23 @@ function webform_guard_client_spam_report_respond($is_ajax, $token_row, $message
     : '<front>';
 
   if ($is_ajax) {
-    $icon = $type === 'status' ? '&#10003;' : ($type === 'warning' ? '&#9888;' : '&#10007;');
+    // @todo Replace HTML entities with Backdrop's built-in SVG icon system.
+    if ($type === 'status') {
+      $icon = '&#10003;';
+    }
+    elseif ($type === 'warning') {
+      $icon = '&#9888;';
+    }
+    else {
+      $icon = '&#10007;';
+    }
+
+    $done_link = l(t('Done'), $submission_url, array(
+      'attributes' => array('class' => array('button', 'button-primary')),
+    ));
     $content = '<p class="messages messages--' . check_plain($type) . '">'
-      . $icon . ' ' . check_plain($message)
-      . '</p>'
-      . '<p>' . l(t('Done'), $submission_url, array('attributes' => array('class' => array('button', 'button-primary')))) . '</p>';
+      . $icon . ' ' . check_plain($message) . '</p>'
+      . '<p>' . $done_link . '</p>';
 
     $commands = array();
     $commands[] = ajax_command_open_dialog(
@@ -867,7 +949,11 @@ function webform_guard_client_relay_spam_report($token_row) {
   $site_identifier = trim($config->get('site_identifier'));
 
   if (empty($server_url) || empty($api_key)) {
-    watchdog('webform_guard_client', 'Cannot relay spam report: guard server URL or API key not configured.', array(), WATCHDOG_ERROR);
+    watchdog('webform_guard_client',
+      'Cannot relay spam report: guard server URL or API key not configured.',
+      array(),
+      WATCHDOG_ERROR
+    );
     return 'error';
   }
 
@@ -875,6 +961,7 @@ function webform_guard_client_relay_spam_report($token_row) {
     'site_identifier' => $site_identifier,
     'spam_identifier' => array(
       'field' => $token_row->identifier_field,
+      'type' => $token_row->identifier_type,
       'value' => $token_row->identifier_value,
     ),
   );
@@ -889,15 +976,20 @@ function webform_guard_client_relay_spam_report($token_row) {
     'timeout' => 8,
   );
 
-  $response = backdrop_http_request($server_url . '/api/v1/report-spam', $options);
+  $endpoint = $server_url . '/api/v1/webform-guard/report-spam';
+  $response = backdrop_http_request($endpoint, $options);
 
   if (!empty($response->error) || !in_array($response->code, array(200, 202))) {
-    watchdog('webform_guard_client', 'Spam relay failed: @error', array('@error' => !empty($response->error) ? $response->error : 'HTTP ' . $response->code), WATCHDOG_WARNING);
+    $error = !empty($response->error) ? $response->error : 'HTTP ' . $response->code;
+    watchdog('webform_guard_client', 'Spam relay failed: @error',
+      array('@error' => $error), WATCHDOG_WARNING);
     return 'error';
   }
 
   $data = json_decode(webform_guard_client_extract_json($response->data));
-  if (is_object($data) && !empty($data->subscription->status) && $data->subscription->status === 'expired') {
+  if (is_object($data)
+    && !empty($data->subscription->status)
+    && $data->subscription->status === 'expired') {
     return 'subscription_expired';
   }
 

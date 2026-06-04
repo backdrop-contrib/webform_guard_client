@@ -42,6 +42,13 @@ function webform_guard_client_schema() {
         'not null' => TRUE,
         'default' => '',
       ),
+      'identifier_type' => array(
+        'description' => 'The Webform component type of the identifier field (e.g. email, tel, url, textfield).',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
       'identifier_value' => array(
         'description' => 'The normalised identifier value, e.g. the submitter email address.',
         'type' => 'varchar',
@@ -82,6 +89,13 @@ function webform_guard_client_schema() {
 }
 
 /**
+ * Implements hook_uninstall().
+ */
+function webform_guard_client_uninstall() {
+  config('webform_guard_client.settings')->delete();
+}
+
+/**
  * Implements hook_install().
  */
 function webform_guard_client_install() {
@@ -91,21 +105,21 @@ function webform_guard_client_install() {
   }
 }
 
-/**
- * Implements hook_uninstall().
- */
-function webform_guard_client_uninstall() {
-  db_drop_table('webform_guard_spam_tokens');
-}
 
 /**
- * Create the spam tokens table for existing installations.
+ * Add identifier_type column to webform_guard_spam_tokens.
  */
-function webform_guard_client_update_8001() {
-  $schema = webform_guard_client_schema();
-  if (!db_table_exists('webform_guard_spam_tokens')) {
-    db_create_table('webform_guard_spam_tokens', $schema['webform_guard_spam_tokens']);
+function webform_guard_client_update_8010() {
+  if (!db_field_exists('webform_guard_spam_tokens', 'identifier_type')) {
+    db_add_field('webform_guard_spam_tokens', 'identifier_type', array(
+      'description' => 'The Webform component type of the identifier field (e.g. email, tel, url, textfield).',
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => TRUE,
+      'default' => '',
+    ));
   }
 
-  return t('Create the Webform Guard spam tokens table.');
+  return t('Add identifier_type column to webform_guard_spam_tokens table.');
 }
+

@@ -1,9 +1,7 @@
 name = Webform Guard Client
 description = Routes Backdrop Webform submissions through a remote spam-check service before delivery.
-project = Acuity
-package = Acuity
+package = Webform
 type = module
 backdrop = 1.x
-version = 0.0.3
 dependencies[] = webform
 configure = admin/config/webform-guard-client/settings

@@ -3,8 +3,8 @@
 
 Webform Guard Client is a Backdrop CMS module that integrates with the Backdrop Webform module to intercept submissions before the normal email and notification workflow runs. Each submission is sent to a remote `webform_guard_server` installation for a spam check. If the server identifies the submitter as a known spammer, the submission is silently blocked and the user sees a friendly message. Clean submissions pass through untouched. Recipients can also report unwanted messages as spam directly from a link in their notification email — no account or login required or from the view submissions form.
 
-## Alpha Release Notes
-As an alpha release, the core submission checking, spam token generation, email link injection, and admin reporting button are fully functional. Testers should ensure their Backdrop CMS environment is running PHP 8.0+, that the companion `webform_guard_server` module is installed and reachable, and that system caches are cleared after installation to register the new hooks and menu items.  The Webform Guard Server can be run from the same site.
+## Beta Release Notes
+As a beta release, the core submission checking, spam token generation, email link injection, and admin reporting button are fully functional. Testers should ensure their Backdrop CMS environment is running PHP 8.0+, that the companion `webform_guard_server` module is installed and reachable, and that system caches are cleared after installation to register the new hooks and menu items.  The Webform Guard Server can be run from the same site.
 
 ## Features
 
@@ -21,7 +21,7 @@ As an alpha release, the core submission checking, spam token generation, email 
 ## Requirements
 
 - Backdrop CMS 1.x
-- PHP 8.0+
+- PHP 8.0+ (While the code may technically function with PHP 7.4 at this time, we strictly require PHP 8.0+ and will not address issues related to older PHP versions.)
 - [Webform module](https://backdropcms.org/project/webform) for Backdrop CMS
 - A running installation of the companion [Webform Guard Server](../webform_guard_server) module
 
@@ -53,10 +53,8 @@ Bugs and feature requests should be reported in the Issue Queue: https://github.
 - Steve Moorhouse — Zulip (DrAlbany)
 - Claude Code by Anthropic assisted with development of this module.
 
-## Sponsorship
-- Albany Computer Services (https://www.albany-computers.co.uk)
-- Albany Web Design (https://www.albanywebdesign.co.uk)
-- Albany Hosting (https://www.albany-hosting.co.uk)
+- Current development is sponsored by [Albany Computer Services](https://www.albany-computers.co.uk), providers of computer support, [web design](https://www.albanywebdesign.co.uk), and [web hosting](https://www.albany-hosting.co.uk).
+- A hosted Webform Guard server is available for sites that prefer not to self-host. Contact the [maintainer](https://github.com/albanycomputers) to enquire.
 
 ## License
 This project is GPL v2 or later software. See the LICENSE.txt file in this directory for complete text.

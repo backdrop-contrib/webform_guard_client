@@ -2,8 +2,61 @@
 
 /**
  * @file
- * Admin settings form for Webform Guard Client.
+ * Admin pages and settings forms for Webform Guard Client.
  */
+
+/**
+ * Admin overview page callback.
+ *
+ * @return string
+ *   Rendered HTML markup for the overview page.
+ */
+function webform_guard_client_overview_page() {
+  $output = '<h2>' . t('Webform Guard Client') . '</h2>';
+  $output .= '<p>' . t('Routes Backdrop Webform submissions through a remote guard service before the normal notification workflow continues.') . '</p>';
+  $output .= l(t('Configure settings'), 'admin/config/webform-guard-client/settings');
+  $output .= webform_guard_client_overview_table();
+  return $output;
+}
+
+/**
+ * Return a central overview table of webforms and their guard status.
+ *
+ * @return string
+ *   Rendered HTML table, or a paragraph if no webforms exist.
+ */
+function webform_guard_client_overview_table() {
+  $header = array(
+    t('Webform'),
+    t('Guard status'),
+    t('Identifier field'),
+    t('Actions'),
+  );
+
+  $rows = array();
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'title'))
+    ->condition('type', 'webform')
+    ->orderBy('title');
+  $result = $query->execute();
+  foreach ($result as $row) {
+    $settings = webform_guard_client_get_webform_guard_settings($row->nid);
+    $rows[] = array(
+      'data' => array(
+        check_plain($row->title),
+        $settings['enabled'] ? t('Enabled') : t('Disabled'),
+        !empty($settings['identifier_field']) ? check_plain($settings['identifier_field']) : t('None'),
+        l(t('Edit'), 'node/' . $row->nid . '/edit'),
+      ),
+    );
+  }
+
+  if (empty($rows)) {
+    return '<p>' . t('No webforms are available on this site yet.') . '</p>';
+  }
+
+  return theme('table', array('header' => $header, 'rows' => $rows));
+}
 
 /**
  * Settings form callback.
@@ -25,7 +78,8 @@ function webform_guard_client_settings_form($form, &$form_state) {
 
   if ($last_test_time) {
     $status_class = (strpos($last_test_status, 'OK') !== FALSE) ? 'ok' : 'error';
-    $markup = '<div class="webform-guard-connection-status webform-guard-connection-status--' . $status_class . '">'
+    $markup = '<div class="webform-guard-connection-status webform-guard-connection-status--'
+      . $status_class . '">'
       . '<strong>' . t('Last connection test:') . '</strong> '
       . format_date($last_test_time, 'short')
       . ' &mdash; ' . check_plain($last_test_status);
@@ -91,8 +145,13 @@ function webform_guard_client_settings_form($form, &$form_state) {
 /**
  * Submit handler: test the connection to the guard server.
  *
- * Calls /api/v1/status with the configured API key, stores the result, and
- * displays a message on the settings page.
+ * Calls /api/v1/webform-guard/status with the configured API key, stores
+ * the result, and displays a message on the settings page.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
  */
 function webform_guard_client_test_connection_submit($form, &$form_state) {
   $server_url = rtrim(trim($form_state['values']['server_url']), '/');
@@ -112,7 +171,8 @@ function webform_guard_client_test_connection_submit($form, &$form_state) {
     'timeout' => 8,
   );
 
-  $response = backdrop_http_request($server_url . '/api/v1/status', $options);
+  $endpoint = $server_url . '/api/v1/webform-guard/status';
+  $response = backdrop_http_request($endpoint, $options);
   $config = config('webform_guard_client.settings');
   $version = '';
 
@@ -126,12 +186,19 @@ function webform_guard_client_test_connection_submit($form, &$form_state) {
     if (is_object($data) && !empty($data->status) && $data->status === 'ok') {
       $version = !empty($data->version) ? $data->version : '';
       if (!empty($data->authenticated)) {
-        $status = t('OK — authenticated as @client', array('@client' => !empty($data->client) ? $data->client : t('unknown')));
-        backdrop_set_message(t('Connection successful. Authenticated as: @client', array('@client' => !empty($data->client) ? $data->client : t('unknown'))), 'status');
+        $client_name = !empty($data->client) ? $data->client : t('unknown');
+        $status = t('OK — authenticated as @client', array('@client' => $client_name));
+        backdrop_set_message(
+          t('Connection successful. Authenticated as: @client', array('@client' => $client_name)),
+          'status'
+        );
       }
       else {
         $status = t('OK — server reachable but API key not recognised');
-        backdrop_set_message(t('Server is reachable but the API key was not recognised. Check the key matches the client record on the guard server.'), 'warning');
+        backdrop_set_message(
+          t('Server is reachable but the API key was not recognised. Check the key matches the client record on the guard server.'),
+          'warning'
+        );
       }
     }
     else {

@@ -31,6 +31,9 @@ CORE DIRECTIVES (MANDATORY)
 
 Backdrop Standards:
 - ALWAYS use Backdrop APIs (never assume Drupal)
+- ALWAYS follow Backdrop CMS PHP coding standards https://docs.backdropcms.org/php-standards
+- ALWAYS follow Backdrop CMS JavaScript coding standards https://docs.backdropcms.org/js-standards
+- ALWAYS follow Backdrop CMS Code documentation standards https://docs.backdropcms.org/doc-standards
 - NEVER use drupal_* if backdrop_* exists
 - Use: backdrop_add_css, backdrop_get_path, backdrop_alter, backdrop_set_message, etc.
 
@@ -110,14 +113,42 @@ COMPLETED WORK
 - webform_guard_client_extract_json(): strips chunked transfer encoding wrappers from backdrop_http_request() bodies
 - DB schema: webform_guard_spam_tokens table (token, sid, nid, identifier_field, identifier_value, used, expires)
 - CSS: webform_guard_client.css — button styling for reported/disabled state
+- Full docblocks (description, @param, @return) added to all functions across .module, .admin.inc, .install
+- README.md created (features, requirements, installation, configuration, license)
+- .gitignore created and committed to local repo (CLAUDE.md, docs/, OS/IDE/backup files)
+- License updated to GPL v2 or later
+- hook_config_info() moved from dead .config.php into .module; .config.php deleted
+- spam/% renamed to spam-report/% (menu item, mail link, admin button href — all three)
+- identifier_type added to webform_guard_spam_tokens schema; update hook 8010 added temporarily
+- webform_guard_client_get_component_type() helper added — single lookup point for Webform type
+- build_payload(), webform_submission_insert(), create_spam_token(), relay_spam_report() all
+  updated to pass and store identifier_type so server can normalise correctly
+- overview_page() and overview_table() moved from .module to admin.inc; file key added to menu
+- hook_uninstall() added to delete config on uninstall (Backdrop handles table drops automatically)
+- Backdrop coding standards applied throughout: long lines split, nested ternaries expanded,
+  multi-arg calls split, endpoint URLs extracted to $endpoint variable
 
 
 ==================================================
 CURRENT STATE
 ==================================================
 
-Core functionality complete. Submission checking, spam token generation, email link, admin "Report as spam" button, and relay to server all working.
-Settings config key: webform_guard_client.settings (server_url, api_key, site_identifier, fallback_on_error, enabled_webforms).
+Core functionality complete. Submission checking, spam token generation, email link, admin
+"Report as spam" button, and relay to server all working.
+Settings config key: webform_guard_client.settings (server_url, api_key, site_identifier,
+fallback_on_error, enabled_webforms).
+Spam report route: spam-report/{token}.
+identifier_type stored in webform_guard_spam_tokens and relayed to server on report.
+Temp update hook webform_guard_client_update_8010() in .install — remove before git push.
+Local git repo on branch 1.x-1.x. No GitHub remote yet.
+
+==================================================
+KEY FILES
+==================================================
+
+- webform_guard_client.module — form integration, mail/submission hooks, token management, relay
+- webform_guard_client.admin.inc — overview page, overview table, settings form, connection test
+- webform_guard_client.install — hook_schema(), hook_uninstall(), temp update hook 8010
 
 
 ==================================================
