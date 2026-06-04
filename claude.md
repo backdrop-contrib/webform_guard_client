@@ -96,30 +96,55 @@ The `webform_guard_client` module integrates with Backdrop webforms and routes f
 COMPLETED WORK
 ==================================================
 
+- hook_form_alter: adds Webform Guard fieldset to webform node edit (enable toggle, identifier field select, block message config)
+- hook_form_alter: prepends check_submission_validate to submission forms when guard is enabled
+- check_submission_validate: POSTs to /api/v1/check-submission, handles ok/spam/bounced/subscription_expired/error responses
+- hook_mail_alter: appends spam report URL (spam/{token}) to outgoing webform notification emails
+- hook_webform_submission_actions: adds Report as spam (AJAX dialog) / Reported as spam (disabled) button to submission view
+- hook_webform_submission_insert: generates random 64-char hex token (30-day expiry) and stores in webform_guard_spam_tokens
+- webform_guard_client_relay_spam_report(): POSTs to /api/v1/report-spam with Bearer token auth
+- webform_guard_client_spam_report_page(): handles spam/{token} — validates token, relays to server, AJAX dialog or redirect
+- Admin settings: server base URL, API key, site identifier, fallback-on-error toggle, Test connection button
+- Connection test: calls /api/v1/status, stores result (last_test_time, last_test_status, last_test_version) shown on settings page
+- Overview page: table of all webforms with guard enabled/disabled status and identifier field
+- webform_guard_client_extract_json(): strips chunked transfer encoding wrappers from backdrop_http_request() bodies
+- DB schema: webform_guard_spam_tokens table (token, sid, nid, identifier_field, identifier_value, used, expires)
+- CSS: webform_guard_client.css — button styling for reported/disabled state
 
 
 ==================================================
 CURRENT STATE
 ==================================================
 
-- initial build out
+Core functionality complete. Submission checking, spam token generation, email link, admin "Report as spam" button, and relay to server all working.
+Settings config key: webform_guard_client.settings (server_url, api_key, site_identifier, fallback_on_error, enabled_webforms).
+
 
 ==================================================
 PLANNED / NEXT
 ==================================================
 
-
+Nothing confirmed — discuss with user before starting.
 
 
 ==================================================
 CONSTRAINTS (PERMANENT)
 ==================================================
 
+- Token stored locally (webform_guard_spam_tokens) as plain random hex — NOT HMAC-signed on client side.
+  The server verifies its own HMAC-signed tokens for the report/% route; the client token is separate and simpler.
+- webform_guard_client_extract_json() exists specifically because backdrop_http_request() does not decode
+  chunked transfer encoding — do not remove it.
 
 
 ==================================================
 KEY FILES
 ==================================================
+
+- webform_guard_client.module — form integration, mail/submission hooks, token management, relay
+- webform_guard_client.admin.inc — settings form, connection test handler
+- webform_guard_client.install — schema for webform_guard_spam_tokens
+- css/webform_guard_client.css — button states for spam report actions
 
 
 ==================================================

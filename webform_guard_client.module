@@ -40,6 +40,9 @@ function webform_guard_client_menu() {
 
 /**
  * Admin overview page callback.
+ *
+ * @return string
+ *   Rendered HTML markup for the overview page.
  */
 function webform_guard_client_overview_page() {
   $output = '<h2>' . t('Webform Guard Client') . '</h2>';
@@ -124,6 +127,9 @@ function webform_guard_client_form_alter(&$form, &$form_state, $form_id) {
 
 /**
  * Return a central overview table of webforms and their guard status.
+ *
+ * @return string
+ *   Rendered HTML table, or a paragraph if no webforms exist.
  */
 function webform_guard_client_overview_table() {
   $header = array(
@@ -160,6 +166,9 @@ function webform_guard_client_overview_table() {
 
 /**
  * Determine whether the current form is a webform node edit or creation page.
+ *
+ * @return bool
+ *   TRUE if the current path is node/add or node/%/edit, FALSE otherwise.
  */
 function webform_guard_client_is_node_edit_form() {
   return arg(0) === 'node' && (arg(1) === 'add' || arg(2) === 'edit');
@@ -167,6 +176,12 @@ function webform_guard_client_is_node_edit_form() {
 
 /**
  * Return settings for a webform node's guard configuration.
+ *
+ * @param int|null $nid
+ *   The webform node ID.
+ *
+ * @return array
+ *   Array with keys: enabled, identifier_field, show_block_message, block_message.
  */
 function webform_guard_client_get_webform_guard_settings($nid) {
   $config = config('webform_guard_client.settings');
@@ -197,6 +212,12 @@ function webform_guard_client_get_webform_guard_settings($nid) {
 
 /**
  * Return a list of selectable webform component fields.
+ *
+ * @param object $node
+ *   The webform node object.
+ *
+ * @return array
+ *   Associative array of form_key => label strings suitable for a select element.
  */
 function webform_guard_client_get_webform_component_options($node) {
   $options = array();
@@ -219,6 +240,12 @@ function webform_guard_client_get_webform_component_options($node) {
 
 /**
  * Determine if Webform Guard is enabled for a given webform node.
+ *
+ * @param int $nid
+ *   The webform node ID.
+ *
+ * @return bool
+ *   TRUE if Webform Guard is enabled for this node, FALSE otherwise.
  */
 function webform_guard_client_is_webform_guard_enabled($nid) {
   $settings = webform_guard_client_get_webform_guard_settings($nid);
@@ -227,6 +254,12 @@ function webform_guard_client_is_webform_guard_enabled($nid) {
 
 /**
  * Return the configured identifier field for a webform node.
+ *
+ * @param int $nid
+ *   The webform node ID.
+ *
+ * @return string
+ *   The form key of the identifier field, or an empty string if not configured.
  */
 function webform_guard_client_get_webform_guard_identifier_field($nid) {
   $settings = webform_guard_client_get_webform_guard_settings($nid);
@@ -235,6 +268,17 @@ function webform_guard_client_get_webform_guard_identifier_field($nid) {
 
 /**
  * Save Webform Guard enabled state for a webform node.
+ *
+ * @param int $nid
+ *   The webform node ID.
+ * @param bool $enabled
+ *   Whether Webform Guard should be active for this node.
+ * @param string $identifier_field
+ *   The form key of the spam identifier field.
+ * @param bool $show_block_message
+ *   Whether to display a message to users when their submission is blocked.
+ * @param string $block_message
+ *   The message text to show when a submission is blocked.
  */
 function webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identifier_field = '', $show_block_message = TRUE, $block_message = '') {
   if (empty($nid)) {
@@ -265,6 +309,11 @@ function webform_guard_client_set_webform_guard_enabled($nid, $enabled, $identif
  *
  * Enforces that a sender email field is selected whenever Webform Guard is
  * enabled, since the identifier field is required for spam detection.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
  */
 function webform_guard_client_webform_node_form_validate($form, &$form_state) {
   if (!empty($form_state['values']['webform_guard']['enabled'])
@@ -276,6 +325,11 @@ function webform_guard_client_webform_node_form_validate($form, &$form_state) {
 
 /**
  * Submit handler for the webform node settings.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
  */
 function webform_guard_client_webform_node_form_submit($form, &$form_state) {
   $nid = isset($form_state['nid']) ? $form_state['nid'] : (isset($form_state['values']['nid']) ? $form_state['values']['nid'] : NULL);
@@ -292,6 +346,11 @@ function webform_guard_client_webform_node_form_submit($form, &$form_state) {
 
 /**
  * Validate the webform submission with the guard service.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
  */
 function webform_guard_client_check_submission_validate($form, &$form_state) {
   $config = config('webform_guard_client.settings');
@@ -373,6 +432,16 @@ function webform_guard_client_check_submission_validate($form, &$form_state) {
 
 /**
  * Build the payload sent to the guard server.
+ *
+ * @param object $node
+ *   The webform node object.
+ * @param array $submitted
+ *   The submitted form values keyed by form key.
+ * @param object $config
+ *   The webform_guard_client.settings config object.
+ *
+ * @return array
+ *   The payload array ready for JSON encoding.
  */
 function webform_guard_client_build_payload($node, array $submitted, $config) {
   $payload = array(
@@ -426,6 +495,9 @@ function webform_guard_client_extract_json($body) {
 
 /**
  * Generate a request submission identifier.
+ *
+ * @return string
+ *   A unique identifier string prefixed with 'wgc_'.
  */
 function webform_guard_client_generate_submission_id() {
   return 'wgc_' . md5(uniqid(mt_rand(), TRUE));
@@ -436,6 +508,9 @@ function webform_guard_client_generate_submission_id() {
  *
  * Appends a This is spam link to outgoing webform notification emails when
  * a valid spam-report token exists for that submission.
+ *
+ * @param array $message
+ *   The mail message array, passed by reference.
  */
 function webform_guard_client_mail_alter(&$message) {
   if (empty($message['params']['submission']) || empty($message['params']['node'])) {
@@ -474,6 +549,15 @@ function webform_guard_client_mail_alter(&$message) {
  *
  * Shows a Report as spam button for active tokens, and a disabled Reported as
  * spam button after the submission has already been flagged.
+ *
+ * @param object $node
+ *   The webform node object.
+ * @param object $submission
+ *   The webform submission object.
+ *
+ * @return array
+ *   An array of action link definitions, or an empty array if guard is disabled
+ *   or no valid token exists for this submission.
  */
 function webform_guard_client_webform_submission_actions($node, $submission) {
   if (!webform_guard_client_is_webform_guard_enabled($node->nid)) {
@@ -529,6 +613,11 @@ function webform_guard_client_webform_submission_actions($node, $submission) {
  *
  * Generates a signed spam-report token after a submission is saved so the
  * token is ready for the submission preview and notification email.
+ *
+ * @param object $node
+ *   The webform node object.
+ * @param object $submission
+ *   The webform submission object, containing sid and data.
  */
 function webform_guard_client_webform_submission_insert($node, $submission) {
   if (!webform_guard_client_is_webform_guard_enabled($node->nid)) {

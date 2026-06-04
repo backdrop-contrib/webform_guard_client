@@ -7,6 +7,14 @@
 
 /**
  * Settings form callback.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
+ *
+ * @return array
+ *   The form render array.
  */
 function webform_guard_client_settings_form($form, &$form_state) {
   $config = config('webform_guard_client.settings');
@@ -142,6 +150,11 @@ function webform_guard_client_test_connection_submit($form, &$form_state) {
 
 /**
  * Form submit handler.
+ *
+ * @param array $form
+ *   The form array.
+ * @param array $form_state
+ *   The form state array.
  */
 function webform_guard_client_settings_form_submit($form, &$form_state) {
   $config = config('webform_guard_client.settings');
